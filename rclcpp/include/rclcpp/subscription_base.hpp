@@ -18,6 +18,7 @@
 #include <atomic>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -25,6 +26,8 @@
 
 #include "rcl/event_callback.h"
 #include "rcl/subscription.h"
+
+#include "rosidl_runtime_c/message_type_support_struct.h"
 
 #include "rmw/impl/cpp/demangle.hpp"
 #include "rmw/rmw.h"
@@ -97,8 +100,9 @@ public:
    * rclcpp::SubscriptionOptions::to_rcl_subscription_options depends on the message type.
    *
    * \param[in] node_base NodeBaseInterface pointer used in parts of the setup.
-   * \param[in] type_support_handle rosidl type support struct, for the Message type of the topic.
    * \param[in] topic_name Name of the topic to subscribe to.
+   * \param[in] type_support_handle rosidl type support struct, for the Message type of the topic.
+   * \param[in] type_constraints Optional message type constraints.
    * \param[in] subscription_options Options for the subscription.
    * \param[in] delivered_message_kind Enum flag to change how the message will be received and
    *            delivered
@@ -106,8 +110,9 @@ public:
   RCLCPP_PUBLIC
   SubscriptionBase(
     rclcpp::node_interfaces::NodeBaseInterface * node_base,
-    const rosidl_message_type_support_t & type_support_handle,
     const std::string & topic_name,
+    const rosidl_message_type_support_t & type_support_handle,
+    const std::optional<rosidl_message_type_constraints_t> & type_constraints,
     const rcl_subscription_options_t & subscription_options,
     const SubscriptionEventCallbacks & event_callbacks,
     bool use_default_callbacks,

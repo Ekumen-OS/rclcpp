@@ -22,6 +22,7 @@
 #include <functional>
 #include <iostream>
 #include <memory>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <unordered_map>
@@ -29,6 +30,8 @@
 #include <vector>
 
 #include "rcl/publisher.h"
+
+#include "rosidl_runtime_c/message_type_support_struct.h"
 
 #include "rclcpp/macros.hpp"
 #include "rclcpp/network_flow_endpoint.hpp"
@@ -71,6 +74,7 @@ public:
    * \param[in] node_base A pointer to the NodeBaseInterface for the parent node.
    * \param[in] topic The topic that this publisher publishes on.
    * \param[in] type_support The type support structure for the type to be published.
+   * \param[in] type_constraints Optional message type constraints.
    * \param[in] publisher_options QoS settings for this publisher.
    */
   RCLCPP_PUBLIC
@@ -78,6 +82,7 @@ public:
     rclcpp::node_interfaces::NodeBaseInterface * node_base,
     const std::string & topic,
     const rosidl_message_type_support_t & type_support,
+    const std::optional<rosidl_message_type_constraints_t> & type_constraints,
     const rcl_publisher_options_t & publisher_options,
     const PublisherEventCallbacks & event_callbacks,
     bool use_default_callbacks);

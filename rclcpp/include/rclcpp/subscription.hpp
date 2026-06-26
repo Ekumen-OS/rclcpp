@@ -22,6 +22,7 @@
 #include <functional>
 #include <iostream>
 #include <memory>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <utility>
@@ -44,6 +45,7 @@
 #include "rclcpp/subscription_base.hpp"
 #include "rclcpp/subscription_options.hpp"
 #include "rclcpp/subscription_traits.hpp"
+#include "rosidl_runtime_cpp/experimental/traits.hpp"
 #include "rclcpp/type_support_decl.hpp"
 #include "rclcpp/visibility_control.hpp"
 #include "rclcpp/waitable.hpp"
@@ -130,22 +132,27 @@ public:
   // *INDENT-OFF*
   Subscription(
     rclcpp::node_interfaces::NodeBaseInterface * node_base,
-    const rosidl_message_type_support_t & type_support_handle,
     const std::string & topic_name,
     const rclcpp::QoS & qos,
     AnySubscriptionCallback<MessageT, AllocatorT> callback,
+    const std::optional<rosidl_runtime_cpp::MessageConstraints<ROSMessageType>> & constraints,
     const rclcpp::SubscriptionOptionsWithAllocator<AllocatorT> & options,
     typename MessageMemoryStrategyT::SharedPtr message_memory_strategy,
     SubscriptionTopicStatisticsSharedPtr subscription_topic_statistics = nullptr)
   : SubscriptionBase(
       node_base,
-      type_support_handle,
       topic_name,
+      rclcpp::get_message_type_support_handle<MessageT>(),
+      constraints
+        ? std::optional<rosidl_message_type_constraints_t>(
+            constraints->to_rosidl_message_type_constraints())
+        : std::nullopt,
       options.to_rcl_subscription_options(qos),
       // NOTE(methylDragon): Passing these args separately is necessary for event binding
       options.event_callbacks,
       options.use_default_callbacks,
-      callback.is_serialized_message_callback() ? DeliveredMessageKind::SERIALIZED_MESSAGE : DeliveredMessageKind::ROS_MESSAGE),  // NOLINT
+      callback.is_serialized_message_callback() ? DeliveredMessageKind::SERIALIZED_MESSAGE : DeliveredMessageKind::ROS_MESSAGE  // NOLINT
+    ),
     any_callback_(callback),
     options_(options),
     message_memory_strategy_(message_memory_strategy)
@@ -356,7 +363,19 @@ public:
     auto typed_message = static_cast<ROSMessageType *>(loaned_message);
     // message is loaned, so we have to make sure that the deleter does not deallocate the message
     auto sptr = std::shared_ptr<ROSMessageType>(
-      typed_message, [](ROSMessageType * msg) {(void) msg;});
+      typed_message, [weak_self = std::weak_ptr{shared_from_this()}](ROSMessageType * msg) {
+        if (auto self = weak_self.lock()) {
+          rcl_ret_t ret =
+          rcl_return_loaned_message_from_subscription(self->get_subscription_handle().get(), msg);
+          if (RCL_RET_OK != ret) {
+            RCLCPP_ERROR(
+              rclcpp::get_logger("rclcpp"),
+              "rcl_return_loaned_message_from_subscription() failed for subscription on topic "
+              "'%s': %s",
+              self->get_topic_name(), rcl_get_error_string().str);
+          }
+        }
+      });
 
     std::chrono::time_point<std::chrono::system_clock> now;
     if (subscription_topic_statistics_) {

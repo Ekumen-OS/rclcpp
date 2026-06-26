@@ -39,8 +39,9 @@ using rclcpp::SubscriptionBase;
 
 SubscriptionBase::SubscriptionBase(
   rclcpp::node_interfaces::NodeBaseInterface * node_base,
-  const rosidl_message_type_support_t & type_support_handle,
   const std::string & topic_name,
+  const rosidl_message_type_support_t & type_support_handle,
+  const std::optional<rosidl_message_type_constraints_t> & type_constraints,
   const rcl_subscription_options_t & subscription_options,
   const SubscriptionEventCallbacks & event_callbacks,
   bool use_default_callbacks,
@@ -70,12 +71,23 @@ SubscriptionBase::SubscriptionBase(
     new rcl_subscription_t, custom_deletor);
   *subscription_handle_.get() = rcl_get_zero_initialized_subscription();
 
-  rcl_ret_t ret = rcl_subscription_init(
-    subscription_handle_.get(),
-    node_handle_.get(),
-    &type_support_handle,
-    topic_name.c_str(),
-    &subscription_options);
+  rcl_ret_t ret;
+  if (type_constraints.has_value()) {
+    ret = rcl_subscription_init_with_constraints(
+      subscription_handle_.get(),
+      node_handle_.get(),
+      &type_support_handle,
+      &type_constraints.value(),
+      topic_name.c_str(),
+      &subscription_options);
+  } else {
+    ret = rcl_subscription_init(
+      subscription_handle_.get(),
+      node_handle_.get(),
+      &type_support_handle,
+      topic_name.c_str(),
+      &subscription_options);
+  }
   if (ret != RCL_RET_OK) {
     if (ret == RCL_RET_TOPIC_NAME_INVALID) {
       auto rcl_node_handle = node_handle_.get();

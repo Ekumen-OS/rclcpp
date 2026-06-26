@@ -18,11 +18,13 @@
 #include <chrono>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <utility>
 
 #include "rclcpp/detail/resolve_enable_topic_statistics.hpp"
+#include "rosidl_runtime_cpp/experimental/traits.hpp"
 
 #include "rclcpp/node_interfaces/get_node_timers_interface.hpp"
 #include "rclcpp/node_interfaces/get_node_topics_interface.hpp"
@@ -64,7 +66,9 @@ create_subscription(
   ),
   typename MessageMemoryStrategyT::SharedPtr msg_mem_strat = (
     MessageMemoryStrategyT::create_default()
-  )
+  ),
+  const std::optional<rosidl_runtime_cpp::MessageConstraints<
+    typename SubscriptionT::ROSMessageType>> & constraints = std::nullopt
 )
 {
   using rclcpp::node_interfaces::get_node_topics_interface;
@@ -122,6 +126,7 @@ create_subscription(
     std::forward<CallbackT>(callback),
     options,
     msg_mem_strat,
+    constraints,
     subscription_topic_stats
   );
 
@@ -140,31 +145,6 @@ create_subscription(
 }  // namespace detail
 
 /// Create and return a subscription of the given MessageT type.
-/**
- * The NodeT type only needs to have a method called get_node_topics_interface()
- * which returns a shared_ptr to a NodeTopicsInterface, or be a
- * NodeTopicsInterface pointer itself.
- *
- * In case `options.qos_overriding_options` is enabling qos parameter overrides,
- * NodeT must also have a method called get_node_parameters_interface()
- * which returns a shared_ptr to a NodeParametersInterface.
- *
- * \tparam MessageT
- * \tparam CallbackT
- * \tparam AllocatorT
- * \tparam SubscriptionT
- * \tparam MessageMemoryStrategyT
- * \tparam NodeT
- * \param node
- * \param topic_name
- * \param qos
- * \param callback
- * \param options
- * \param msg_mem_strat
- * \return the created subscription
- * \throws std::invalid_argument if topic statistics is enabled and the publish period is
- * less than or equal to zero.
- */
 template<
   typename MessageT,
   typename CallbackT,
@@ -191,10 +171,37 @@ create_subscription(
     node, node, topic_name, qos, std::forward<CallbackT>(callback), options, msg_mem_strat);
 }
 
+/// Create and return a subscription with message constraints.
+template<
+  typename MessageT,
+  typename CallbackT,
+  typename AllocatorT = std::allocator<void>,
+  typename SubscriptionT = rclcpp::Subscription<MessageT, AllocatorT>,
+  typename MessageMemoryStrategyT = typename SubscriptionT::MessageMemoryStrategyType,
+  typename NodeT>
+std::shared_ptr<SubscriptionT>
+create_subscription(
+  NodeT & node,
+  const std::string & topic_name,
+  const rclcpp::QoS & qos,
+  CallbackT && callback,
+  const rosidl_runtime_cpp::MessageConstraints<
+    typename SubscriptionT::ROSMessageType> & constraints,
+  const rclcpp::SubscriptionOptionsWithAllocator<AllocatorT> & options = (
+    rclcpp::SubscriptionOptionsWithAllocator<AllocatorT>()
+  ),
+  typename MessageMemoryStrategyT::SharedPtr msg_mem_strat = (
+    MessageMemoryStrategyT::create_default()
+  )
+)
+{
+  return rclcpp::detail::create_subscription<
+    MessageT, CallbackT, AllocatorT, SubscriptionT, MessageMemoryStrategyT>(
+    node, node, topic_name, qos, std::forward<CallbackT>(callback),
+    options, msg_mem_strat, constraints);
+}
+
 /// Create and return a subscription of the given MessageT type.
-/**
- * See \ref create_subscription().
- */
 template<
   typename MessageT,
   typename CallbackT,
@@ -220,6 +227,37 @@ create_subscription(
     MessageT, CallbackT, AllocatorT, SubscriptionT, MessageMemoryStrategyT>(
     node_parameters, node_topics, topic_name, qos,
     std::forward<CallbackT>(callback), options, msg_mem_strat);
+}
+
+/// Create and return a subscription with message constraints.
+template<
+  typename MessageT,
+  typename CallbackT,
+  typename AllocatorT = std::allocator<void>,
+  typename SubscriptionT = rclcpp::Subscription<MessageT, AllocatorT>,
+  typename MessageMemoryStrategyT = typename SubscriptionT::MessageMemoryStrategyType>
+std::shared_ptr<SubscriptionT>
+create_subscription(
+  rclcpp::node_interfaces::NodeParametersInterface::SharedPtr & node_parameters,
+  rclcpp::node_interfaces::NodeTopicsInterface::SharedPtr & node_topics,
+  const std::string & topic_name,
+  const rclcpp::QoS & qos,
+  CallbackT && callback,
+  const rosidl_runtime_cpp::MessageConstraints<
+    typename SubscriptionT::ROSMessageType> & constraints,
+  const rclcpp::SubscriptionOptionsWithAllocator<AllocatorT> & options = (
+    rclcpp::SubscriptionOptionsWithAllocator<AllocatorT>()
+  ),
+  typename MessageMemoryStrategyT::SharedPtr msg_mem_strat = (
+    MessageMemoryStrategyT::create_default()
+  )
+)
+{
+  return rclcpp::detail::create_subscription<
+    MessageT, CallbackT, AllocatorT, SubscriptionT, MessageMemoryStrategyT>(
+    node_parameters, node_topics, topic_name, qos,
+    std::forward<CallbackT>(callback), options,
+    msg_mem_strat, constraints);
 }
 
 }  // namespace rclcpp

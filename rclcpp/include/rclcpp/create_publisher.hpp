@@ -16,10 +16,12 @@
 #define RCLCPP__CREATE_PUBLISHER_HPP_
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 
 #include "rclcpp/node_interfaces/get_node_topics_interface.hpp"
+#include "rosidl_runtime_cpp/experimental/traits.hpp"
 #include "rclcpp/node_interfaces/node_topics_interface.hpp"
 #include "rclcpp/node_options.hpp"
 #include "rclcpp/publisher_factory.hpp"
@@ -50,7 +52,9 @@ create_publisher(
   const rclcpp::QoS & qos,
   const rclcpp::PublisherOptionsWithAllocator<AllocatorT> & options = (
     rclcpp::PublisherOptionsWithAllocator<AllocatorT>()
-  )
+  ),
+  const std::optional<rosidl_runtime_cpp::MessageConstraints<
+    typename PublisherT::ROSMessageType>> & constraints = std::nullopt
 )
 {
   auto node_topics_interface = rclcpp::node_interfaces::get_node_topics_interface(node_topics);
@@ -64,7 +68,7 @@ create_publisher(
   // Create the publisher.
   auto pub = node_topics_interface->create_publisher(
     topic_name,
-    rclcpp::create_publisher_factory<MessageT, AllocatorT, PublisherT>(options),
+    rclcpp::create_publisher_factory<MessageT, AllocatorT, PublisherT>(options, constraints),
     actual_qos
   );
 
@@ -77,14 +81,6 @@ create_publisher(
 
 
 /// Create and return a publisher of the given MessageT type.
-/**
- * The NodeT type only needs to have a method called get_node_topics_interface()
- * which returns a shared_ptr to a NodeTopicsInterface.
- *
- * In case `options.qos_overriding_options` is enabling qos parameter overrides,
- * NodeT must also have a method called get_node_parameters_interface()
- * which returns a shared_ptr to a NodeParametersInterface.
- */
 template<
   typename MessageT,
   typename AllocatorT = std::allocator<void>,
@@ -102,6 +98,30 @@ create_publisher(
 {
   return detail::create_publisher<MessageT, AllocatorT, PublisherT>(
     node, node, topic_name, qos, options);
+}
+
+/// Create and return a publisher with message constraints.
+template<
+  typename MessageT,
+  typename AllocatorT = std::allocator<void>,
+  typename PublisherT = rclcpp::Publisher<MessageT, AllocatorT>,
+  typename NodeT>
+std::enable_if_t<
+  rosidl_runtime_cpp::has_constraints_v<MessageT>,
+  std::shared_ptr<PublisherT>
+>
+create_publisher(
+  NodeT && node,
+  const std::string & topic_name,
+  const rclcpp::QoS & qos,
+  const rosidl_runtime_cpp::MessageConstraints<MessageT> & constraints,
+  const rclcpp::PublisherOptionsWithAllocator<AllocatorT> & options = (
+    rclcpp::PublisherOptionsWithAllocator<AllocatorT>()
+  )
+)
+{
+  return detail::create_publisher<MessageT, AllocatorT, PublisherT>(
+    node, node, topic_name, qos, constraints, options);
 }
 
 /// Create and return a publisher of the given MessageT type.
@@ -122,6 +142,27 @@ create_publisher(
 {
   return detail::create_publisher<MessageT, AllocatorT, PublisherT>(
     node_parameters, node_topics, topic_name, qos, options);
+}
+
+/// Create and return a publisher with message constraints.
+template<
+  typename MessageT,
+  typename AllocatorT = std::allocator<void>,
+  typename PublisherT = rclcpp::Publisher<MessageT, AllocatorT>>
+std::shared_ptr<PublisherT>
+create_publisher(
+  rclcpp::node_interfaces::NodeParametersInterface::SharedPtr & node_parameters,
+  rclcpp::node_interfaces::NodeTopicsInterface::SharedPtr & node_topics,
+  const std::string & topic_name,
+  const rclcpp::QoS & qos,
+  const rosidl_runtime_cpp::MessageConstraints<MessageT> & constraints,
+  const rclcpp::PublisherOptionsWithAllocator<AllocatorT> & options = (
+    rclcpp::PublisherOptionsWithAllocator<AllocatorT>()
+  )
+)
+{
+  return detail::create_publisher<MessageT, AllocatorT, PublisherT>(
+    node_parameters, node_topics, topic_name, qos, constraints, options);
 }
 
 }  // namespace rclcpp

@@ -45,6 +45,7 @@ PublisherBase::PublisherBase(
   rclcpp::node_interfaces::NodeBaseInterface * node_base,
   const std::string & topic,
   const rosidl_message_type_support_t & type_support,
+  const std::optional<rosidl_message_type_constraints_t> & type_constraints,
   const rcl_publisher_options_t & publisher_options,
   const PublisherEventCallbacks & event_callbacks,
   bool use_default_callbacks)
@@ -70,12 +71,23 @@ PublisherBase::PublisherBase(
     new rcl_publisher_t, custom_deleter);
   *publisher_handle_.get() = rcl_get_zero_initialized_publisher();
 
-  rcl_ret_t ret = rcl_publisher_init(
-    publisher_handle_.get(),
-    rcl_node_handle_.get(),
-    &type_support,
-    topic.c_str(),
-    &publisher_options);
+  rcl_ret_t ret;
+  if (type_constraints.has_value()) {
+    ret = rcl_publisher_init_with_constraints(
+      publisher_handle_.get(),
+      rcl_node_handle_.get(),
+      &type_support,
+      &type_constraints.value(),
+      topic.c_str(),
+      &publisher_options);
+  } else {
+    ret = rcl_publisher_init(
+      publisher_handle_.get(),
+      rcl_node_handle_.get(),
+      &type_support,
+      topic.c_str(),
+      &publisher_options);
+  }
   if (ret != RCL_RET_OK) {
     if (ret == RCL_RET_TOPIC_NAME_INVALID) {
       auto rcl_node_handle = rcl_node_handle_.get();

@@ -24,6 +24,7 @@
 
 #include "rcl/allocator.h"
 #include "rcl/publisher.h"
+#include "rosidl_runtime_cpp/experimental/traits.hpp"
 
 namespace rclcpp
 {
@@ -111,6 +112,52 @@ public:
     std::shared_ptr<std::allocator<MessageT>> allocator)
   : LoanedMessage(*pub, *allocator)
   {}
+
+  /// Constructor of the LoanedMessage class with constraints.
+  /**
+   * Same as the regular constructor but accepts optional message constraints
+   * that bound the size of variable-length members of the message type.
+   * When the middleware supports loaning and constraints are non-null, this
+   * constructor calls rcl_borrow_loaned_message_with_constraints() instead of
+   * rcl_borrow_loaned_message().
+   *
+   * If `message_constraints` is nullptr, this constructor behaves identically
+   * to the regular 2-argument constructor.
+   *
+   * \param[in] pub rclcpp::Publisher instance to which the memory belongs
+   * \param[in] constraints Additional constraints on the message type.
+   * \param[in] allocator Allocator instance in case middleware can not allocate messages
+   * \throws anything rclcpp::exceptions::throw_from_rcl_error can throw.
+   */
+  LoanedMessage(
+    const rclcpp::PublisherBase & pub,
+    const rosidl_runtime_cpp::MessageConstraints<MessageT> & constraints,
+    std::allocator<MessageT> allocator)
+  : pub_(pub),
+    message_(nullptr),
+    message_allocator_(std::move(allocator))
+  {
+    if (pub_.can_loan_messages()) {
+      void * message_ptr = nullptr;
+      const rosidl_message_type_constraints_t c_type_constraints =
+        constraints.to_rosidl_message_type_constraints();
+      rcl_ret_t  ret = rcl_borrow_loaned_message_with_constraints(
+          pub_.get_publisher_handle().get(),
+          rosidl_typesupport_cpp::get_message_type_support_handle<MessageT>(),
+          &c_type_constraints,
+          &message_ptr);
+      if (RCL_RET_OK != ret) {
+        rclcpp::exceptions::throw_from_rcl_error(ret);
+      }
+      message_ = static_cast<MessageT *>(message_ptr);
+    } else {
+      RCLCPP_INFO_ONCE(
+        rclcpp::get_logger("rclcpp"),
+        "Currently used middleware can't loan messages. Local allocator will be used.");
+      message_ = message_allocator_.allocate(1);
+      new (message_) MessageT();
+    }
+  }
 
   /// Move semantic for RVO
   LoanedMessage(LoanedMessage<MessageT> && other)

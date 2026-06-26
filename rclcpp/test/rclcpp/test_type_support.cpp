@@ -76,6 +76,7 @@ public:
       node->get_node_base_interface().get(),
       "topicTSParameterEvent",
       *ts_parameter_event,
+      std::nullopt,
       PublisherOptions().to_rcl_publisher_options<test_msgs::msg::Empty>(rclcpp::QoS(10)),
       PublisherOptions().event_callbacks, PublisherOptions().use_default_callbacks) {}
 };
@@ -91,6 +92,7 @@ public:
       node->get_node_base_interface().get(),
       "topicTSSetParameterResult",
       *ts_set_parameter_result,
+      std::nullopt,
       PublisherOptions().to_rcl_publisher_options<test_msgs::msg::Empty>(rclcpp::QoS(10)),
       PublisherOptions().event_callbacks, PublisherOptions().use_default_callbacks) {}
 };
@@ -106,6 +108,7 @@ public:
       node->get_node_base_interface().get(),
       "topicTSParameterDescriptor",
       *ts_parameter_descriptor,
+      std::nullopt,
       PublisherOptions().to_rcl_publisher_options<test_msgs::msg::Empty>(rclcpp::QoS(10)),
       PublisherOptions().event_callbacks, PublisherOptions().use_default_callbacks) {}
 };
@@ -121,6 +124,7 @@ public:
       node->get_node_base_interface().get(),
       "topicTSListParametersResult",
       *ts_list_parameter_result,
+      std::nullopt,
       PublisherOptions().to_rcl_publisher_options<test_msgs::msg::Empty>(rclcpp::QoS(10)),
       PublisherOptions().event_callbacks, PublisherOptions().use_default_callbacks) {}
 };

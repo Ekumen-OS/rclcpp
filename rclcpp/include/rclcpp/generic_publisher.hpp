@@ -78,6 +78,7 @@ public:
       node_base,
       topic_name,
       *rclcpp::get_message_typesupport_handle(topic_type, "rosidl_typesupport_cpp", *ts_lib),
+      std::nullopt,  // TODO(hidmic): support message constraints for generic publishers
       options.template to_rcl_publisher_options<rclcpp::SerializedMessage>(qos),
       // NOTE(methylDragon): Passing these args separately is necessary for event binding
       options.event_callbacks,

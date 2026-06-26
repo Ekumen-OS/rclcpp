@@ -18,6 +18,7 @@
 #include <functional>
 #include <iostream>
 #include <memory>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <type_traits>
@@ -28,6 +29,7 @@
 #include "rmw/error_handling.h"
 #include "rmw/rmw.h"
 #include "rosidl_runtime_cpp/traits.hpp"
+#include "rosidl_runtime_cpp/experimental/traits.hpp"
 
 #include "rclcpp/allocator/allocator_common.hpp"
 #include "rclcpp/allocator/allocator_deleter.hpp"
@@ -129,17 +131,23 @@ public:
    * \param[in] node_base NodeBaseInterface pointer that is used in part of the setup.
    * \param[in] topic Name of the topic to publish to.
    * \param[in] qos QoS profile for Subcription.
+   * \param[in] constraints Optional message constraints.
    * \param[in] options Options for the subscription.
    */
   Publisher(
     rclcpp::node_interfaces::NodeBaseInterface * node_base,
     const std::string & topic,
     const rclcpp::QoS & qos,
+    const std::optional<rosidl_runtime_cpp::MessageConstraints<ROSMessageType>> & constraints,
     const rclcpp::PublisherOptionsWithAllocator<AllocatorT> & options)
   : PublisherBase(
       node_base,
       topic,
       rclcpp::get_message_type_support_handle<MessageT>(),
+      constraints ?
+      std::optional<rosidl_message_type_constraints_t>(
+            constraints->to_rosidl_message_type_constraints()) :
+      std::nullopt,
       options.template to_rcl_publisher_options<MessageT>(qos),
       // NOTE(methylDragon): Passing these args separately is necessary for event binding
       options.event_callbacks,
@@ -219,8 +227,21 @@ public:
   borrow_loaned_message()
   {
     return rclcpp::LoanedMessage<ROSMessageType, AllocatorT>(
-      *this,
-      this->get_ros_message_type_allocator());
+      *this, this->get_ros_message_type_allocator());
+  }
+
+  /// Borrow a loaned message with constraints.
+  /**
+   * Same as borrow_loaned_message(), but accepts message constraints.
+   *
+   * \param[in] constraints Additional constraints for the borrowed message.
+   * \return LoanedMessage containing memory for a ROS message of type ROSMessageType
+   */
+  rclcpp::LoanedMessage<ROSMessageType, AllocatorT>
+  borrow_loaned_message(const rosidl_runtime_cpp::MessageConstraints<ROSMessageType> & constraints)
+  {
+    return rclcpp::LoanedMessage<ROSMessageType, AllocatorT>(
+      *this, constraints, this->get_ros_message_type_allocator());
   }
 
   /// Publish a message on the topic.
@@ -235,7 +256,7 @@ public:
    * \param[in] msg A unique pointer to the message to send.
    */
   template<typename T>
-  typename std::enable_if_t<
+  std::enable_if_t<
     rosidl_generator_traits::is_message<T>::value &&
     std::is_same<T, ROSMessageType>::value
   >
@@ -289,7 +310,7 @@ public:
    * \param[in] msg A const reference to the message to send.
    */
   template<typename T>
-  typename std::enable_if_t<
+  std::enable_if_t<
     rosidl_generator_traits::is_message<T>::value &&
     std::is_same<T, ROSMessageType>::value
   >
@@ -319,7 +340,7 @@ public:
    * \param[in] msg A unique pointer to the message to send.
    */
   template<typename T>
-  typename std::enable_if_t<
+  std::enable_if_t<
     rclcpp::TypeAdapter<MessageT>::is_specialized::value &&
     std::is_same<T, PublishedType>::value
   >
@@ -369,7 +390,7 @@ public:
    * \param[in] msg A const reference to the message to send.
    */
   template<typename T>
-  typename std::enable_if_t<
+  std::enable_if_t<
     rclcpp::TypeAdapter<MessageT>::is_specialized::value &&
     std::is_same<T, PublishedType>::value
   >

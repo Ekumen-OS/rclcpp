@@ -17,6 +17,7 @@
 
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 
@@ -82,8 +83,10 @@ create_subscription_factory(
   CallbackT && callback,
   const rclcpp::SubscriptionOptionsWithAllocator<AllocatorT> & options,
   typename MessageMemoryStrategyT::SharedPtr msg_mem_strat,
-  std::shared_ptr<rclcpp::topic_statistics::SubscriptionTopicStatistics>
-  subscription_topic_stats = nullptr
+  const std::optional<rosidl_runtime_cpp::MessageConstraints<
+    typename SubscriptionT::ROSMessageType>> & constraints = std::nullopt,
+  std::shared_ptr<rclcpp::topic_statistics::SubscriptionTopicStatistics> subscription_topic_stats =
+  nullptr
 )
 {
   auto allocator = options.get_allocator();
@@ -94,7 +97,7 @@ create_subscription_factory(
 
   SubscriptionFactory factory {
     // factory function that creates a MessageT specific SubscriptionT
-    [options, msg_mem_strat, any_subscription_callback, subscription_topic_stats](
+    [options, msg_mem_strat, any_subscription_callback, constraints, subscription_topic_stats](
       rclcpp::node_interfaces::NodeBaseInterface * node_base,
       const std::string & topic_name,
       const rclcpp::QoS & qos
@@ -105,10 +108,10 @@ create_subscription_factory(
 
       auto sub = Subscription<MessageT, AllocatorT>::make_shared(
         node_base,
-        rclcpp::get_message_type_support_handle<MessageT>(),
         topic_name,
         qos,
         any_subscription_callback,
+        constraints,
         options,
         msg_mem_strat,
         subscription_topic_stats);

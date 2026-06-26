@@ -267,7 +267,7 @@ class TestPublisherBase : public rclcpp::PublisherBase
 public:
   explicit TestPublisherBase(rclcpp::Node * node)
   : rclcpp::PublisherBase(
-      node->get_node_base_interface().get(), "topic", EmptyTypeSupport(),
+      node->get_node_base_interface().get(), "topic", EmptyTypeSupport(), std::nullopt,
       PublisherOptions().to_rcl_publisher_options<test_msgs::msg::Empty>(rclcpp::QoS(10)),
       PublisherOptions().event_callbacks, PublisherOptions().use_default_callbacks) {}
 };

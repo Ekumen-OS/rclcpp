@@ -82,6 +82,23 @@ Node::create_publisher(
     options);
 }
 
+template<typename MessageT, typename AllocatorT, typename PublisherT>
+std::shared_ptr<PublisherT>
+Node::create_publisher(
+  const std::string & topic_name,
+  const rclcpp::QoS & qos,
+  const rosidl_runtime_cpp::MessageConstraints<
+    typename PublisherT::ROSMessageType> & constraints,
+  const PublisherOptionsWithAllocator<AllocatorT> & options)
+{
+  return rclcpp::create_publisher<MessageT, AllocatorT, PublisherT>(
+    *this,
+    extend_name_with_sub_namespace(topic_name, this->get_sub_namespace()),
+    qos,
+    constraints,
+    options);
+}
+
 template<
   typename MessageT,
   typename CallbackT,
@@ -101,6 +118,32 @@ Node::create_subscription(
     extend_name_with_sub_namespace(topic_name, this->get_sub_namespace()),
     qos,
     std::forward<CallbackT>(callback),
+    options,
+    msg_mem_strat);
+}
+
+template<
+  typename MessageT,
+  typename CallbackT,
+  typename AllocatorT,
+  typename SubscriptionT,
+  typename MessageMemoryStrategyT>
+std::shared_ptr<SubscriptionT>
+Node::create_subscription(
+  const std::string & topic_name,
+  const rclcpp::QoS & qos,
+  CallbackT && callback,
+  const rosidl_runtime_cpp::MessageConstraints<
+    typename SubscriptionT::ROSMessageType> & constraints,
+  const SubscriptionOptionsWithAllocator<AllocatorT> & options,
+  typename MessageMemoryStrategyT::SharedPtr msg_mem_strat)
+{
+  return rclcpp::create_subscription<MessageT>(
+    *this,
+    extend_name_with_sub_namespace(topic_name, this->get_sub_namespace()),
+    qos,
+    std::forward<CallbackT>(callback),
+    constraints,
     options,
     msg_mem_strat);
 }

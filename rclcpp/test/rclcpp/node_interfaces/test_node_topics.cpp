@@ -58,7 +58,7 @@ class TestPublisher : public rclcpp::PublisherBase
 public:
   explicit TestPublisher(rclcpp::Node * node)
   : rclcpp::PublisherBase(
-      node->get_node_base_interface().get(), "topic", EmptyTypeSupport(),
+      node->get_node_base_interface().get(), "topic", EmptyTypeSupport(), std::nullopt,
       PublisherOptions().to_rcl_publisher_options<test_msgs::msg::Empty>(rclcpp::QoS(10)),
       PublisherOptions().event_callbacks, PublisherOptions().use_default_callbacks) {}
 };
@@ -68,7 +68,7 @@ class TestSubscription : public rclcpp::SubscriptionBase
 public:
   explicit TestSubscription(rclcpp::Node * node)
   : rclcpp::SubscriptionBase(
-      node->get_node_base_interface().get(), EmptyTypeSupport(), "topic",
+      node->get_node_base_interface().get(), "topic", EmptyTypeSupport(), std::nullopt,
       SubscriptionOptions().to_rcl_subscription_options(rclcpp::QoS(10)),
       SubscriptionOptions().event_callbacks, SubscriptionOptions().use_default_callbacks) {}
   std::shared_ptr<void> create_message() override {return nullptr;}

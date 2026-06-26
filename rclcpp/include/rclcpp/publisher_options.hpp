@@ -84,7 +84,6 @@ struct PublisherOptionsWithAllocator : public PublisherOptionsBase
   {}
 
   /// Convert this class, and a rclcpp::QoS, into an rcl_publisher_options_t.
-  template<typename MessageT>
   rcl_publisher_options_t
   to_rcl_publisher_options(const rclcpp::QoS & qos) const
   {
@@ -102,6 +101,12 @@ struct PublisherOptionsWithAllocator : public PublisherOptionsBase
     return result;
   }
 
+  template<typename MessageT>
+  rcl_publisher_options_t
+  to_rcl_publisher_options(const rclcpp::QoS & qos) const
+  {
+    return this->to_rcl_publisher_options(qos);
+  }
 
   /// Get the allocator, creating one if needed.
   std::shared_ptr<Allocator>
