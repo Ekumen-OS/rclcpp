@@ -51,7 +51,19 @@ public:
     const std::string & topic,
     const rclcpp::QoS & qos,
     const rclcpp::PublisherOptionsWithAllocator<Alloc> & options)
-  : rclcpp::Publisher<MessageT, Alloc>(node_base, topic, qos, options),
+  : LifecyclePublisher(node_base, topic, qos, std::nullopt, options)
+  {
+  }
+
+  LifecyclePublisher(
+    rclcpp::node_interfaces::NodeBaseInterface * node_base,
+    const std::string & topic,
+    const rclcpp::QoS & qos,
+    const std::optional<rosidl_runtime_cpp::MessageConstraints<
+      typename rclcpp::Publisher<MessageT, Alloc>::ROSMessageType
+    >> & constraints,
+    const rclcpp::PublisherOptionsWithAllocator<Alloc> & options)
+  : rclcpp::Publisher<MessageT, Alloc>(node_base, topic, qos, constraints, options),
     should_log_(true),
     logger_(rclcpp::get_logger("LifecyclePublisher"))
   {
