@@ -121,7 +121,7 @@ create_publisher(
 )
 {
   return detail::create_publisher<MessageT, AllocatorT, PublisherT>(
-    node, node, topic_name, qos, constraints, options);
+    node, node, topic_name, qos, options, constraints);
 }
 
 /// Create and return a publisher of the given MessageT type.
@@ -162,7 +162,7 @@ create_publisher(
 )
 {
   return detail::create_publisher<MessageT, AllocatorT, PublisherT>(
-    node_parameters, node_topics, topic_name, qos, constraints, options);
+    node_parameters, node_topics, topic_name, qos, options, constraints);
 }
 
 }  // namespace rclcpp
