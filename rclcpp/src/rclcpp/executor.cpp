@@ -556,42 +556,64 @@ Executor::execute_subscription(rclcpp::SubscriptionBase::SharedPtr subscription)
           // inter-process communication, given to the user for their callback,
           // and then returned.
           void * loaned_msg = nullptr;
+          bool loaned_taken = false;
           // TODO(wjwwood): refactor this into methods on subscription when LoanedMessage
           //   is extened to support subscriptions as well.
-          take_and_do_error_handling(
-            "taking a loaned message from topic",
-            subscription->get_topic_name(),
-            [&]()
-            {
-              rcl_ret_t ret = rcl_take_loaned_message(
-                subscription->get_subscription_handle().get(),
-                &loaned_msg,
-                &message_info.get_rmw_message_info(),
-                nullptr);
-              if (RCL_RET_SUBSCRIPTION_TAKE_FAILED == ret) {
-                return false;
-              } else if (RCL_RET_OK != ret) {
-                rclcpp::exceptions::throw_from_rcl_error(ret);
-              }
-              return true;
-            },
-            [&]() {subscription->handle_loaned_message(loaned_msg, message_info);});
-        } else {
-          // This case is taking a copy of the message data from the middleware via
-          // inter-process communication.
-          std::shared_ptr<void> message = subscription->create_message();
-          take_and_do_error_handling(
-            "taking a message from topic",
-            subscription->get_topic_name(),
-            [&]() {return subscription->take_type_erased(message.get(), message_info);},
-            [&]() {subscription->handle_message(message, message_info);});
-          // TODO(clalancette): In the case that the user is using the MessageMemoryPool,
-          // and they take a shared_ptr reference to the message in the callback, this can
-          // inadvertently return the message to the pool when the user is still using it.
-          // This is a bug that needs to be fixed in the pool, and we should probably have
-          // a custom deleter for the message that actually does the return_message().
-          subscription->return_message(message);
+          try {
+            rcl_ret_t ret = rcl_take_loaned_message(
+              subscription->get_subscription_handle().get(),
+              &loaned_msg,
+              &message_info.get_rmw_message_info(),
+              nullptr);
+            if (RCL_RET_SUBSCRIPTION_TAKE_FAILED == ret) {
+              // No data available — normal for a spurious wake; fall through
+              // to the copy take below (it will find none either).
+            } else if (RCL_RET_OK == ret) {
+              loaned_taken = true;
+            } else if (RCL_RET_UNSUPPORTED == ret) {
+              // Loaned take unsupported for this sample: the publisher did
+              // not encode the data size in the representation header
+              // options.  The sample was not consumed (the middleware used a
+              // non-consuming read to decide), so fall back to the copy take
+              // below, which can retrieve it.
+              RCLCPP_DEBUG(
+                rclcpp::get_logger("rclcpp"),
+                "loaned take unsupported for topic '%s', falling back to copy take",
+                subscription->get_topic_name());
+            } else {
+              // Any other error is a true failure — propagate.
+              rclcpp::exceptions::throw_from_rcl_error(ret);
+            }
+          } catch (const rclcpp::exceptions::RCLError & rcl_error) {
+            RCLCPP_ERROR(
+              rclcpp::get_logger("rclcpp"),
+              "executor taking a loaned message from topic '%s' unexpectedly failed: %s",
+              subscription->get_topic_name(), rcl_error.what());
+            // True failure — do not attempt the copy-take fallback.
+            return;
+          }
+
+          if (loaned_taken) {
+            subscription->handle_loaned_message(loaned_msg, message_info);
+            return;
+          }
+          // Fall through to the copy take for TAKE_FAILED or UNSUPPORTED.
         }
+
+        // This case is taking a copy of the message data from the middleware via
+        // inter-process communication.
+        std::shared_ptr<void> message = subscription->create_message();
+        take_and_do_error_handling(
+          "taking a message from topic",
+          subscription->get_topic_name(),
+          [&]() {return subscription->take_type_erased(message.get(), message_info);},
+          [&]() {subscription->handle_message(message, message_info);});
+        // TODO(clalancette): In the case that the user is using the MessageMemoryPool,
+        // and they take a shared_ptr reference to the message in the callback, this can
+        // inadvertently return the message to the pool when the user is still using it.
+        // This is a bug that needs to be fixed in the pool, and we should probably have
+        // a custom deleter for the message that actually does the return_message().
+        subscription->return_message(message);
         break;
       }
 
