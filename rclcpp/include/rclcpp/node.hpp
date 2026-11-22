@@ -62,6 +62,8 @@
 #include "rclcpp/parameter.hpp"
 #include "rclcpp/publisher.hpp"
 #include "rclcpp/publisher_options.hpp"
+#include "rclcpp/region_publisher.hpp"
+#include "rclcpp/region_subscription.hpp"
 #include "rclcpp/qos.hpp"
 #include "rclcpp/service.hpp"
 #include "rclcpp/subscription.hpp"
@@ -199,6 +201,15 @@ public:
     PublisherOptionsWithAllocator<AllocatorT>()
   );
 
+  /// Create a region-view publisher with an endpoint-wide constraint baseline.
+  template<typename ViewT>
+  std::shared_ptr<rclcpp::RegionPublisher<ViewT>>
+  create_publisher(
+    const std::string & topic_name,
+    const rclcpp::QoS & qos,
+    const rosidl_runtime_cpp::views::MessageConstraints<ViewT> & constraints,
+    const rclcpp::PublisherOptions & options = rclcpp::PublisherOptions());
+
   /// Create and return a Subscription.
   /**
    * \param[in] topic_name The topic to subscribe on.
@@ -226,6 +237,16 @@ public:
       MessageMemoryStrategyT::create_default()
     )
   );
+
+  /// Create a region-view subscription with a callback-scoped middleware loan.
+  template<typename ViewT, typename CallbackT>
+  std::shared_ptr<rclcpp::RegionSubscription<ViewT>>
+  create_subscription(
+    const std::string & topic_name,
+    const rclcpp::QoS & qos,
+    CallbackT && callback,
+    const rosidl_runtime_cpp::views::MessageConstraints<ViewT> & constraints,
+    const rclcpp::SubscriptionOptions & options = rclcpp::SubscriptionOptions());
 
   /// Create a wall timer that uses the wall clock to drive the callback.
   /**

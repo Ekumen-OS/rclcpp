@@ -79,6 +79,17 @@ public:
     const PublisherEventCallbacks & event_callbacks,
     bool use_default_callbacks);
 
+  /// Construct a publisher with an endpoint-wide message context.
+  RCLCPP_PUBLIC
+  PublisherBase(
+    rclcpp::node_interfaces::NodeBaseInterface * node_base,
+    const std::string & topic,
+    const rosidl_message_type_support_t & type_support,
+    const rcl_publisher_options_t & publisher_options,
+    const PublisherEventCallbacks & event_callbacks,
+    bool use_default_callbacks,
+    const rosidl_runtime_c__message_context_t * context);
+
   RCLCPP_PUBLIC
   virtual ~PublisherBase();
 

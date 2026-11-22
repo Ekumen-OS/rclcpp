@@ -50,6 +50,19 @@ PublisherBase::PublisherBase(
   const rcl_publisher_options_t & publisher_options,
   const PublisherEventCallbacks & event_callbacks,
   bool use_default_callbacks)
+: PublisherBase(
+    node_base, topic, type_support, publisher_options, event_callbacks, use_default_callbacks,
+    nullptr)
+{}
+
+PublisherBase::PublisherBase(
+  rclcpp::node_interfaces::NodeBaseInterface * node_base,
+  const std::string & topic,
+  const rosidl_message_type_support_t & type_support,
+  const rcl_publisher_options_t & publisher_options,
+  const PublisherEventCallbacks & event_callbacks,
+  bool use_default_callbacks,
+  const rosidl_runtime_c__message_context_t * context)
 : rcl_node_handle_(node_base->get_shared_rcl_node_handle()),
   intra_process_is_enabled_(false),
   intra_process_publisher_id_(0),
@@ -72,12 +85,13 @@ PublisherBase::PublisherBase(
     new rcl_publisher_t, custom_deleter);
   *publisher_handle_.get() = rcl_get_zero_initialized_publisher();
 
-  rcl_ret_t ret = rcl_publisher_init(
-    publisher_handle_.get(),
-    rcl_node_handle_.get(),
-    &type_support,
-    topic.c_str(),
-    &publisher_options);
+  rcl_ret_t ret = context ?
+    rcl_publisher_init_with_context(
+    publisher_handle_.get(), rcl_node_handle_.get(), &type_support, context,
+    topic.c_str(), &publisher_options) :
+    rcl_publisher_init(
+    publisher_handle_.get(), rcl_node_handle_.get(), &type_support,
+    topic.c_str(), &publisher_options);
   if (ret != RCL_RET_OK) {
     if (ret == RCL_RET_TOPIC_NAME_INVALID) {
       auto rcl_node_handle = rcl_node_handle_.get();

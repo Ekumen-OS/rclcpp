@@ -21,6 +21,7 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -75,6 +76,35 @@ Node::create_publisher(
     options);
 }
 
+template<typename ViewT>
+std::shared_ptr<rclcpp::RegionPublisher<ViewT>>
+Node::create_publisher(
+  const std::string & topic_name,
+  const rclcpp::QoS & qos,
+  const rosidl_runtime_cpp::views::MessageConstraints<ViewT> & constraints,
+  const rclcpp::PublisherOptions & options)
+{
+  auto topic = extend_name_with_sub_namespace(topic_name, this->get_sub_namespace());
+  const rclcpp::QoS & actual_qos = options.qos_overriding_options.get_policy_kinds().size() ?
+    rclcpp::detail::declare_qos_parameters(
+    options.qos_overriding_options, *this,
+    node_topics_->resolve_topic_name(topic), qos, rclcpp::detail::PublisherQosParametersTraits{}) :
+    qos;
+  rclcpp::PublisherFactory factory{
+    [options, constraints](
+      rclcpp::node_interfaces::NodeBaseInterface * node_base,
+      const std::string & name, const rclcpp::QoS & publisher_qos)
+    {
+      rosidl_runtime_c__message_context_t context{
+        constraints.to_rosidl_message_type_constraints()};
+      return std::make_shared<rclcpp::RegionPublisher<ViewT>>(
+        node_base, name, publisher_qos, options, context);
+    }};
+  auto publisher = node_topics_->create_publisher(topic, factory, actual_qos);
+  node_topics_->add_publisher(publisher, options.callback_group);
+  return std::static_pointer_cast<rclcpp::RegionPublisher<ViewT>>(publisher);
+}
+
 template<
   typename MessageT,
   typename CallbackT,
@@ -96,6 +126,47 @@ Node::create_subscription(
     std::forward<CallbackT>(callback),
     options,
     msg_mem_strat);
+}
+
+template<typename ViewT, typename CallbackT>
+std::shared_ptr<rclcpp::RegionSubscription<ViewT>>
+Node::create_subscription(
+  const std::string & topic_name,
+  const rclcpp::QoS & qos,
+  CallbackT && callback,
+  const rosidl_runtime_cpp::views::MessageConstraints<ViewT> & constraints,
+  const rclcpp::SubscriptionOptions & options)
+{
+  using RegionSubscription = rclcpp::RegionSubscription<ViewT>;
+  typename RegionSubscription::Callback wrapped =
+    [callback = std::forward<CallbackT>(callback)](
+    const ViewT & message, const rclcpp::MessageInfo & info) mutable {
+      if constexpr (std::is_invocable_v<CallbackT &, const ViewT &, const rclcpp::MessageInfo &>) {
+        callback(message, info);
+      } else {
+        callback(message);
+      }
+    };
+  auto topic = extend_name_with_sub_namespace(topic_name, this->get_sub_namespace());
+  const rclcpp::QoS & actual_qos = options.qos_overriding_options.get_policy_kinds().size() ?
+    rclcpp::detail::declare_qos_parameters(
+    options.qos_overriding_options, *this,
+    node_topics_->resolve_topic_name(topic), qos,
+      rclcpp::detail::SubscriptionQosParametersTraits{}) :
+    qos;
+  rclcpp::SubscriptionFactory factory{
+    [options, constraints, wrapped](
+      rclcpp::node_interfaces::NodeBaseInterface * node_base,
+      const std::string & name, const rclcpp::QoS & subscription_qos)
+    {
+      rosidl_runtime_c__message_context_t context{
+        constraints.to_rosidl_message_type_constraints()};
+      return std::make_shared<RegionSubscription>(
+        node_base, name, subscription_qos, wrapped, options, context);
+    }};
+  auto subscription = node_topics_->create_subscription(topic, factory, actual_qos);
+  node_topics_->add_subscription(subscription, options.callback_group);
+  return std::static_pointer_cast<RegionSubscription>(subscription);
 }
 
 template<typename DurationRepT, typename DurationT, typename CallbackT>

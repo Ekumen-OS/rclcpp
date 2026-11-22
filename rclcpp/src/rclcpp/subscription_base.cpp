@@ -50,6 +50,20 @@ SubscriptionBase::SubscriptionBase(
   const SubscriptionEventCallbacks & event_callbacks,
   bool use_default_callbacks,
   DeliveredMessageKind delivered_message_kind)
+: SubscriptionBase(
+    node_base, type_support_handle, topic_name, subscription_options, event_callbacks,
+    use_default_callbacks, delivered_message_kind, nullptr)
+{}
+
+SubscriptionBase::SubscriptionBase(
+  rclcpp::node_interfaces::NodeBaseInterface * node_base,
+  const rosidl_message_type_support_t & type_support_handle,
+  const std::string & topic_name,
+  const rcl_subscription_options_t & subscription_options,
+  const SubscriptionEventCallbacks & event_callbacks,
+  bool use_default_callbacks,
+  DeliveredMessageKind delivered_message_kind,
+  const rosidl_runtime_c__message_context_t * context)
 : node_base_(node_base),
   node_handle_(node_base_->get_shared_rcl_node_handle()),
   node_logger_(rclcpp::get_node_logger(node_handle_.get())),
@@ -75,12 +89,13 @@ SubscriptionBase::SubscriptionBase(
     new rcl_subscription_t, custom_deletor);
   *subscription_handle_.get() = rcl_get_zero_initialized_subscription();
 
-  rcl_ret_t ret = rcl_subscription_init(
-    subscription_handle_.get(),
-    node_handle_.get(),
-    &type_support_handle,
-    topic_name.c_str(),
-    &subscription_options);
+  rcl_ret_t ret = context ?
+    rcl_subscription_init_with_context(
+    subscription_handle_.get(), node_handle_.get(), &type_support_handle, context,
+    topic_name.c_str(), &subscription_options) :
+    rcl_subscription_init(
+    subscription_handle_.get(), node_handle_.get(), &type_support_handle,
+    topic_name.c_str(), &subscription_options);
   if (ret != RCL_RET_OK) {
     if (ret == RCL_RET_TOPIC_NAME_INVALID) {
       auto rcl_node_handle = node_handle_.get();
