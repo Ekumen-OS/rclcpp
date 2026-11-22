@@ -184,6 +184,7 @@
 #include "rclcpp/parameter_service.hpp"
 #include "rclcpp/parameter_descriptor_wrapper.hpp"
 #include "rclcpp/rate.hpp"
+#include "rclcpp/region_service.hpp"
 #include "rclcpp/time.hpp"
 #include "rclcpp/utilities.hpp"
 #include "rclcpp/visibility_control.hpp"
