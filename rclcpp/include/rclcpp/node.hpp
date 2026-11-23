@@ -202,6 +202,7 @@ public:
   );
 
   /// Create a region-view publisher with an endpoint-wide constraint baseline.
+  /// Known unsupported loan paths use ordinary-message copies.
   template<typename ViewT>
   std::shared_ptr<rclcpp::RegionPublisher<ViewT>>
   create_publisher(
@@ -238,7 +239,8 @@ public:
     )
   );
 
-  /// Create a region-view subscription with a callback-scoped middleware loan.
+  /// Create a region-view subscription with a callback-scoped view.
+  /// Known unsupported loan paths use ordinary-message copies.
   template<typename ViewT, typename CallbackT>
   std::shared_ptr<rclcpp::RegionSubscription<ViewT>>
   create_subscription(

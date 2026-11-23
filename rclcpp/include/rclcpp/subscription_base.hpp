@@ -124,6 +124,19 @@ public:
     DeliveredMessageKind delivered_message_kind,
     const rosidl_runtime_c__message_context_t * context);
 
+  /// Recreate a context endpoint using ordinary type support if it cannot loan.
+  RCLCPP_PUBLIC
+  SubscriptionBase(
+    rclcpp::node_interfaces::NodeBaseInterface * node_base,
+    const rosidl_message_type_support_t & type_support_handle,
+    const std::string & topic_name,
+    const rcl_subscription_options_t & subscription_options,
+    const SubscriptionEventCallbacks & event_callbacks,
+    bool use_default_callbacks,
+    DeliveredMessageKind delivered_message_kind,
+    const rosidl_runtime_c__message_context_t * context,
+    const rosidl_message_type_support_t * fallback_type_support);
+
   /// Destructor.
   RCLCPP_PUBLIC
   virtual ~SubscriptionBase();

@@ -63,6 +63,20 @@ PublisherBase::PublisherBase(
   const PublisherEventCallbacks & event_callbacks,
   bool use_default_callbacks,
   const rosidl_runtime_c__message_context_t * context)
+: PublisherBase(
+    node_base, topic, type_support, publisher_options, event_callbacks, use_default_callbacks,
+    context, nullptr)
+{}
+
+PublisherBase::PublisherBase(
+  rclcpp::node_interfaces::NodeBaseInterface * node_base,
+  const std::string & topic,
+  const rosidl_message_type_support_t & type_support,
+  const rcl_publisher_options_t & publisher_options,
+  const PublisherEventCallbacks & event_callbacks,
+  bool use_default_callbacks,
+  const rosidl_runtime_c__message_context_t * context,
+  const rosidl_message_type_support_t * fallback_type_support)
 : rcl_node_handle_(node_base->get_shared_rcl_node_handle()),
   intra_process_is_enabled_(false),
   intra_process_publisher_id_(0),
@@ -104,6 +118,24 @@ PublisherBase::PublisherBase(
     }
 
     rclcpp::exceptions::throw_from_rcl_error(ret, "could not create publisher");
+  }
+  if (context && fallback_type_support &&
+    !rcl_publisher_can_loan_messages(publisher_handle_.get()))
+  {
+    ret = rcl_publisher_fini(publisher_handle_.get(), rcl_node_handle_.get());
+    if (ret != RCL_RET_OK) {
+      rclcpp::exceptions::throw_from_rcl_error(ret, "could not finalize non-loaning publisher");
+    }
+    *publisher_handle_ = rcl_get_zero_initialized_publisher();
+    auto copy_options = publisher_options;
+    copy_options.disable_loaned_message = true;
+    ret = rcl_publisher_init(
+      publisher_handle_.get(), rcl_node_handle_.get(), fallback_type_support,
+      topic.c_str(), &copy_options);
+    if (ret != RCL_RET_OK) {
+      rclcpp::exceptions::throw_from_rcl_error(ret, "could not create copy publisher");
+    }
+    type_support_ = *fallback_type_support;
   }
   // Life time of this object is tied to the publisher handle.
   rmw_publisher_t * publisher_rmw_handle = rcl_publisher_get_rmw_handle(publisher_handle_.get());

@@ -64,6 +64,21 @@ SubscriptionBase::SubscriptionBase(
   bool use_default_callbacks,
   DeliveredMessageKind delivered_message_kind,
   const rosidl_runtime_c__message_context_t * context)
+: SubscriptionBase(
+    node_base, type_support_handle, topic_name, subscription_options, event_callbacks,
+    use_default_callbacks, delivered_message_kind, context, nullptr)
+{}
+
+SubscriptionBase::SubscriptionBase(
+  rclcpp::node_interfaces::NodeBaseInterface * node_base,
+  const rosidl_message_type_support_t & type_support_handle,
+  const std::string & topic_name,
+  const rcl_subscription_options_t & subscription_options,
+  const SubscriptionEventCallbacks & event_callbacks,
+  bool use_default_callbacks,
+  DeliveredMessageKind delivered_message_kind,
+  const rosidl_runtime_c__message_context_t * context,
+  const rosidl_message_type_support_t * fallback_type_support)
 : node_base_(node_base),
   node_handle_(node_base_->get_shared_rcl_node_handle()),
   node_logger_(rclcpp::get_node_logger(node_handle_.get())),
@@ -107,6 +122,52 @@ SubscriptionBase::SubscriptionBase(
         rcl_node_get_namespace(rcl_node_handle));
     }
     rclcpp::exceptions::throw_from_rcl_error(ret, "could not create subscription");
+  }
+  if (context && fallback_type_support &&
+    !rcl_subscription_can_loan_messages(subscription_handle_.get()))
+  {
+    auto copy_options = subscription_options;
+    copy_options.rmw_subscription_options.acceptable_buffer_backends = nullptr;
+    copy_options.rmw_subscription_options.content_filter_options = nullptr;
+    auto cleanup_options = rcpputils::make_scope_exit([&copy_options]() {
+          if (rcl_subscription_options_fini(&copy_options) != RCL_RET_OK) {
+            RCLCPP_ERROR(
+              rclcpp::get_logger("rclcpp"), "Failed to finalize subscription options: %s",
+              rcl_get_error_string().str);
+            rcl_reset_error();
+          }
+      });
+    ret = rcl_subscription_options_set_acceptable_buffer_backends(
+      subscription_options.rmw_subscription_options.acceptable_buffer_backends, &copy_options);
+    if (ret != RCL_RET_OK) {
+      rclcpp::exceptions::throw_from_rcl_error(ret, "could not copy subscription buffer options");
+    }
+    const auto * filter = subscription_options.rmw_subscription_options.content_filter_options;
+    if (filter) {
+      std::vector<const char *> parameters;
+      for (size_t i = 0; i < filter->expression_parameters.size; ++i) {
+        parameters.push_back(filter->expression_parameters.data[i]);
+      }
+      ret = rcl_subscription_options_set_content_filter_options(
+        filter->filter_expression, parameters.size(), parameters.data(), &copy_options);
+      if (ret != RCL_RET_OK) {
+        rclcpp::exceptions::throw_from_rcl_error(ret, "could not copy subscription filter options");
+      }
+    }
+    ret = rcl_subscription_fini(subscription_handle_.get(), node_handle_.get());
+    if (ret != RCL_RET_OK) {
+      rclcpp::exceptions::throw_from_rcl_error(ret, "could not finalize non-loaning subscription");
+    }
+    *subscription_handle_ = rcl_get_zero_initialized_subscription();
+    copy_options.disable_loaned_message = true;
+    cleanup_options.cancel();
+    ret = rcl_subscription_init(
+      subscription_handle_.get(), node_handle_.get(), fallback_type_support,
+      topic_name.c_str(), &copy_options);
+    if (ret != RCL_RET_OK) {
+      rclcpp::exceptions::throw_from_rcl_error(ret, "could not create copy subscription");
+    }
+    type_support_ = *fallback_type_support;
   }
 
   bind_event_callbacks(event_callbacks_, use_default_callbacks);

@@ -61,6 +61,26 @@ if(TARGET test_msgs::test_msgs__rosidl_typesupport_xcdr_cpp)
     target_sources(test_region_service PRIVATE test_region_service_c.c)
     target_link_libraries(test_region_service ${PROJECT_NAME} test_msgs::test_msgs
       test_msgs::test_msgs__rosidl_typesupport_xcdr_cpp)
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+      add_library(no_service_loans SHARED test_no_service_loans.c)
+      target_link_libraries(no_service_loans rcl::rcl)
+      foreach(result unavailable error)
+        ament_add_ros_isolated_gtest_test(test_region_service
+          TEST_NAME test_region_service_capability_${result}
+          ENV RMW_IMPLEMENTATION=rmw_fastrtps_cpp ROS_DISABLE_LOANED_MESSAGES=0
+          REGION_TEST_SERVICE_QUERY=${result} GTEST_FILTER=*injected_service_capability*
+          LD_PRELOAD=$<TARGET_FILE:no_service_loans>)
+      endforeach()
+      add_library(no_region_type_loans SHARED test_no_region_type_loans.c)
+      target_link_libraries(no_region_type_loans rcl::rcl)
+      foreach(result unavailable error)
+        ament_add_ros_isolated_gtest_test(test_region_service
+          TEST_NAME test_region_type_capability_${result}
+          ENV RMW_IMPLEMENTATION=rmw_fastrtps_cpp ROS_DISABLE_LOANED_MESSAGES=0
+          REGION_TEST_TYPE_QUERY=${result} GTEST_FILTER=*injected_type_capability*
+          LD_PRELOAD=$<TARGET_FILE:no_region_type_loans>)
+      endforeach()
+    endif()
   endif()
 endif()
 ament_add_ros_isolated_gtest(test_clock_conditional test_clock_conditional.cpp)

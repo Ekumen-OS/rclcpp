@@ -27,6 +27,7 @@
 #include "rosidl_typesupport_cpp/message_type_support.hpp"
 
 #include "rclcpp/detail/resolve_use_intra_process.hpp"
+#include "rclcpp/detail/region_fallback.hpp"
 #include "rclcpp/exceptions.hpp"
 #include "rclcpp/logging.hpp"
 #include "rclcpp/node_interfaces/node_base_interface.hpp"
@@ -42,27 +43,41 @@ class RegionSubscription : public SubscriptionBase
 {
 public:
   using Callback = std::function<void(const ViewT &, const rclcpp::MessageInfo &)>;
+  using Constraints = rosidl_runtime_cpp::views::MessageConstraints<ViewT>;
 
   RegionSubscription(
     node_interfaces::NodeBaseInterface * node_base, const std::string & topic,
     const rclcpp::QoS & qos, Callback callback, const rclcpp::SubscriptionOptions & options,
     const rosidl_runtime_c__message_context_t & context)
+  : RegionSubscription(
+      node_base, topic, qos, std::move(callback), options, context,
+      rclcpp::detail::region_loan_available(RMW_REGION_LOAN_SUBSCRIPTION) &&
+      rclcpp::detail::region_loan_type_available(
+        RMW_REGION_LOAN_SUBSCRIPTION, &type_support(), &context), nullptr)
+  {}
+
+private:
+  RegionSubscription(
+    node_interfaces::NodeBaseInterface * node_base, const std::string & topic,
+    const rclcpp::QoS & qos, Callback callback, const rclcpp::SubscriptionOptions & options,
+    const rosidl_runtime_c__message_context_t & context, bool native, std::nullptr_t)
   : SubscriptionBase(
-      node_base, type_support(), topic, subscription_options(options, qos),
+      node_base, native ? type_support() : plain_type_support(), topic,
+      subscription_options(options, qos, native),
       options.event_callbacks, options.use_default_callbacks, DeliveredMessageKind::ROS_MESSAGE,
-      &context),
+      native ? &context : nullptr,
+      native ? &plain_type_support() : nullptr),
     callback_(std::move(callback)),
-    options_(options)
+    options_(options), native_(native && can_loan_messages()),
+    constraints_(native_ ? Constraints{} : rclcpp::detail::copy_region_constraints<ViewT>(&context))
   {
     if (rclcpp::detail::resolve_use_intra_process(options_, *node_base)) {
       throw std::invalid_argument(
           "Region subscriptions do not support intra-process communication");
     }
-    if (!can_loan_messages()) {
-      throw std::runtime_error("Middleware cannot loan region views for this subscription");
-    }
   }
 
+public:
   void disable_callbacks() override
   {
     SubscriptionBase::disable_callbacks();
@@ -107,24 +122,43 @@ public:
 
   std::shared_ptr<void> create_message() override
   {
-    throw std::runtime_error("Region subscriptions require middleware loans");
+    if (native_) {
+      throw std::runtime_error("Region subscriptions require middleware loans");
+    }
+    return std::make_shared<typename ViewT::PlainMessage>();
   }
   std::shared_ptr<rclcpp::SerializedMessage> create_serialized_message() override
   {
     throw std::runtime_error("Region subscriptions do not deliver serialized messages");
   }
-  void handle_message(std::shared_ptr<void> &, const rclcpp::MessageInfo &) override
+  void handle_message(std::shared_ptr<void> & message, const rclcpp::MessageInfo & info) override
   {
-    throw std::runtime_error("Region subscriptions require middleware loans");
+    if (native_) {
+      throw std::runtime_error("Region subscriptions require middleware loans");
+    }
+    const auto & plain = *static_cast<const typename ViewT::PlainMessage *>(message.get());
+    if (!constraints_.type_specific.CheckCompatible(plain)) {
+      RCLCPP_ERROR(rclcpp::get_logger("rclcpp"), "Received region copy exceeds constraints");
+      return;
+    }
+    ViewT view;
+    view.assign(plain);
+    std::lock_guard<std::recursive_mutex> lock(callback_mutex_);
+    if (callback_enabled_) {
+      callback_(view, info);
+    }
   }
   void handle_serialized_message(
     const std::shared_ptr<rclcpp::SerializedMessage> &, const rclcpp::MessageInfo &) override
   {
     throw std::runtime_error("Region subscriptions do not deliver serialized messages");
   }
-  void return_message(std::shared_ptr<void> &) override
+  void return_message(std::shared_ptr<void> & message) override
   {
-    throw std::runtime_error("Region subscriptions require middleware loans");
+    if (native_) {
+      throw std::runtime_error("Region subscriptions require middleware loans");
+    }
+    message.reset();
   }
   void return_serialized_message(std::shared_ptr<rclcpp::SerializedMessage> &) override
   {
@@ -161,9 +195,13 @@ public:
 
 private:
   static rcl_subscription_options_t subscription_options(
-    const rclcpp::SubscriptionOptions & options, const rclcpp::QoS & qos)
+    const rclcpp::SubscriptionOptions & options, const rclcpp::QoS & qos, bool native)
   {
     auto result = options.to_rcl_subscription_options(qos);
+    if (!native) {
+      result.disable_loaned_message = true;
+      return result;
+    }
     const char * value = nullptr;
     const char * error = rcutils_get_env("ROS_DISABLE_LOANED_MESSAGES", &value);
     if (error) {
@@ -173,6 +211,16 @@ private:
       result.disable_loaned_message = false;
     }
     return result;
+  }
+
+  static const rosidl_message_type_support_t & plain_type_support()
+  {
+    auto * support =
+      rosidl_typesupport_cpp::get_message_type_support_handle<typename ViewT::PlainMessage>();
+    if (!support) {
+      throw std::runtime_error("Ordinary message type support is null");
+    }
+    return *support;
   }
 
   static const rosidl_message_type_support_t & type_support()
@@ -186,6 +234,8 @@ private:
 
   Callback callback_;
   const rclcpp::SubscriptionOptions options_;
+  const bool native_;
+  const Constraints constraints_;
   std::recursive_mutex callback_mutex_;
   bool callback_enabled_{true};
 };

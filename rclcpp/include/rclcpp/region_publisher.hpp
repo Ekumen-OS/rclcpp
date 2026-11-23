@@ -25,6 +25,7 @@
 #include "rosidl_typesupport_cpp/message_type_support.hpp"
 
 #include "rclcpp/detail/resolve_use_intra_process.hpp"
+#include "rclcpp/detail/region_fallback.hpp"
 #include "rclcpp/exceptions.hpp"
 #include "rclcpp/logging.hpp"
 #include "rclcpp/node_interfaces/node_base_interface.hpp"
@@ -46,12 +47,13 @@ public:
   LoanedRegionMessage & operator=(const LoanedRegionMessage &) = delete;
 
   LoanedRegionMessage(LoanedRegionMessage && other) noexcept
-  : publisher_(std::move(other.publisher_)), message_(std::exchange(other.message_, nullptr))
+  : publisher_(std::move(other.publisher_)), owned_(std::move(other.owned_)),
+    constraints_(std::move(other.constraints_)), message_(std::exchange(other.message_, nullptr))
   {}
 
   ~LoanedRegionMessage()
   {
-    if (message_) {
+    if (message_ && !owned_) {
       auto ret = rcl_return_loaned_message_from_publisher(publisher_.get(), message_);
       if (ret != RCL_RET_OK) {
         RCLCPP_ERROR(
@@ -79,11 +81,20 @@ private:
   : publisher_(std::move(publisher)), message_(message)
   {}
 
+  LoanedRegionMessage(
+    std::shared_ptr<rcl_publisher_t> publisher, std::unique_ptr<ViewT> message,
+    const rosidl_runtime_cpp::views::MessageConstraints<ViewT> & constraints)
+  : publisher_(std::move(publisher)), owned_(std::move(message)),
+    constraints_(constraints), message_(owned_.get())
+  {}
+
   std::shared_ptr<rcl_publisher_t> publisher_;
+  std::unique_ptr<ViewT> owned_;
+  rosidl_runtime_cpp::views::MessageConstraints<ViewT> constraints_{};
   ViewT * message_;
 };
 
-/// Publisher for generated region views; region loans never fall back to copies.
+/// Publisher for generated region views, using ordinary-message copies when loans are unavailable.
 template<typename ViewT>
 class RegionPublisher : public PublisherBase
 {
@@ -94,20 +105,34 @@ public:
     node_interfaces::NodeBaseInterface * node_base, const std::string & topic,
     const rclcpp::QoS & qos, const rclcpp::PublisherOptions & options,
     const rosidl_runtime_c__message_context_t & context)
+  : RegionPublisher(
+      node_base, topic, qos, options, context,
+      rclcpp::detail::region_loan_available(RMW_REGION_LOAN_PUBLISHER) &&
+      rclcpp::detail::region_loan_type_available(
+        RMW_REGION_LOAN_PUBLISHER, &type_support(), &context), nullptr)
+  {}
+
+private:
+  RegionPublisher(
+    node_interfaces::NodeBaseInterface * node_base, const std::string & topic,
+    const rclcpp::QoS & qos, const rclcpp::PublisherOptions & options,
+    const rosidl_runtime_c__message_context_t & context, bool native, std::nullptr_t)
   : PublisherBase(
-      node_base, topic, type_support(),
-      options.template to_rcl_publisher_options<ViewT>(qos),
-      options.event_callbacks, options.use_default_callbacks, &context),
-    options_(options)
+      node_base, topic, native ? type_support() : plain_type_support(),
+      publisher_options(options, qos, native),
+      options.event_callbacks, options.use_default_callbacks, native ? &context : nullptr,
+      native ? &plain_type_support() : nullptr),
+    options_(options), native_(native && can_loan_messages()),
+    constraints_(native_ ? Constraints{} :
+      rclcpp::detail::copy_region_constraints<ViewT>(&context)),
+    has_type_constraints_(context.constraints.type_specific != nullptr)
   {
     if (rclcpp::detail::resolve_use_intra_process(options_, *node_base)) {
       throw std::invalid_argument("Region publishers do not support intra-process communication");
     }
-    if (!can_loan_messages()) {
-      throw std::runtime_error("Middleware cannot loan region views for this publisher");
-    }
   }
 
+public:
   LoanedRegionMessage<ViewT> borrow_loaned_message()
   {
     return borrow(nullptr);
@@ -124,6 +149,25 @@ public:
     if (!loan.is_valid() || loan.publisher_.get() != this->get_publisher_handle().get()) {
       throw std::invalid_argument("Region loan does not belong to this publisher");
     }
+    if (loan.owned_) {
+      if (!constraints_.type_specific.CheckCompatibleView(*loan.message_) ||
+        !loan.constraints_.type_specific.CheckCompatibleView(*loan.message_))
+      {
+        loan.owned_.reset();
+        loan.message_ = nullptr;
+        throw std::invalid_argument("Region message exceeds loan constraints");
+      }
+      auto plain = loan.message_->to_plain();
+      auto ret = rcl_publish(loan.publisher_.get(), &plain, nullptr);
+      if (ret != RCL_RET_PUBLISHER_INVALID) {
+        loan.owned_.reset();
+        loan.message_ = nullptr;
+      }
+      if (ret != RCL_RET_OK) {
+        rclcpp::exceptions::throw_from_rcl_error(ret, "failed to publish region copy");
+      }
+      return;
+    }
     auto * message = std::exchange(loan.message_, nullptr);
     auto ret = rcl_publish_loaned_message(loan.publisher_.get(), message, nullptr);
     if (ret == RCL_RET_PUBLISHER_INVALID) {
@@ -135,6 +179,26 @@ public:
   }
 
 private:
+  static rcl_publisher_options_t publisher_options(
+    const rclcpp::PublisherOptions & options, const rclcpp::QoS & qos, bool native)
+  {
+    auto result = options.template to_rcl_publisher_options<ViewT>(qos);
+    if (!native) {
+      result.disable_loaned_message = true;
+    }
+    return result;
+  }
+
+  static const rosidl_message_type_support_t & plain_type_support()
+  {
+    auto * support =
+      rosidl_typesupport_cpp::get_message_type_support_handle<typename ViewT::PlainMessage>();
+    if (!support) {
+      throw std::runtime_error("Ordinary message type support is null");
+    }
+    return *support;
+  }
+
   static const rosidl_message_type_support_t & type_support()
   {
     auto * support = rosidl_typesupport_cpp::get_message_type_support_handle<ViewT>();
@@ -147,6 +211,12 @@ private:
   LoanedRegionMessage<ViewT> borrow(const rosidl_runtime_c__message_context_t * context)
   {
     auto publisher = this->get_publisher_handle();
+    if (!native_) {
+      auto constraints = rclcpp::detail::refine_region_constraints<ViewT>(
+        constraints_, context, has_type_constraints_);
+      return LoanedRegionMessage<ViewT>(
+        std::move(publisher), std::make_unique<ViewT>(), constraints);
+    }
     void * message = nullptr;
     auto ret = rcl_borrow_loaned_message_with_context(
       publisher.get(), &type_support(), context, &message);
@@ -160,6 +230,9 @@ private:
   }
 
   const rclcpp::PublisherOptions options_;
+  const bool native_;
+  const Constraints constraints_;
+  const bool has_type_constraints_;
 };
 
 }  // namespace rclcpp

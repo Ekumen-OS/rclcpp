@@ -90,6 +90,18 @@ public:
     bool use_default_callbacks,
     const rosidl_runtime_c__message_context_t * context);
 
+  /// Recreate a context endpoint using ordinary type support if it cannot loan.
+  RCLCPP_PUBLIC
+  PublisherBase(
+    rclcpp::node_interfaces::NodeBaseInterface * node_base,
+    const std::string & topic,
+    const rosidl_message_type_support_t & type_support,
+    const rcl_publisher_options_t & publisher_options,
+    const PublisherEventCallbacks & event_callbacks,
+    bool use_default_callbacks,
+    const rosidl_runtime_c__message_context_t * context,
+    const rosidl_message_type_support_t * fallback_type_support);
+
   RCLCPP_PUBLIC
   virtual ~PublisherBase();
 
@@ -369,7 +381,7 @@ protected:
 
   rmw_gid_t rmw_gid_;
 
-  const rosidl_message_type_support_t type_support_;
+  rosidl_message_type_support_t type_support_;
 
   const PublisherEventCallbacks event_callbacks_;
 };
